@@ -12,6 +12,11 @@
 
 #define DEFAULT_TEXT_COLOR  TEXT_COLOR_COOL
 
+#define WARN "[WARN] "
+#define ERROR "[ERROR] "
+#define INFO "[INFO] "
+#define KLOGSIZE_PAGES 2
+
 __PRIVILEGED_CODE
 void kprintSetCursorLocation(uint32_t x, uint32_t y);
 
@@ -58,27 +63,17 @@ void kprintLocked(
     ...
 );
 
-__PRIVILEGED_CODE
-void kprintError(
-    const char* fmt,
-    ...
-);
-
-__PRIVILEGED_CODE
-void kprintWarn(
-    const char* fmt,
-    ...
-);
-
-__PRIVILEGED_CODE
-void kprintInfo(
-    const char* fmt,
-    ...
-);
-
 void kuPrint(
     const char* fmt,
     ...
 );
+
+__PRIVILEGED_CODE
+void kdmesg(
+    char* output,
+    size_t maxLength
+);
+__PRIVILEGED_CODE
+void kprintKernelLog();
 
 #endif
