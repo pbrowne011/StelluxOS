@@ -18,6 +18,12 @@ extern char __per_cpu_size;
 
 #define PER_CPU_OFFSET(name) ((uintptr_t)&name - (uintptr_t)&__per_cpu_start)
 
+template <typename T>
+inline T this_cpu_read(T& name);
+
+template <typename T>
+inline void this_cpu_write(T& name, T val);
+
 #ifdef ARCH_X86_64
 /**
  * @brief Reads a per-CPU variable.
@@ -58,12 +64,33 @@ inline void this_cpu_write(T& name, T val) {
                  :
                  : "r"(val), "r"(__offset));
 }
-#else
+
+#elif defined(ARCH_ARM64)
+// ARM64 implementation using TPIDR_EL1
 template <typename T>
-inline T this_cpu_read(T& name) {}
+inline T this_cpu_read(T& name) {
+    T __x;
+    uintptr_t __offset = PER_CPU_OFFSET(name);
+    asm volatile("mrs x0, tpidr_el1\n"
+                "add x0, x0, %1\n"
+                "ldr %0, [x0]"
+                : "=r"(__x)
+                : "r"(__offset)
+                : "x0", "memory");
+    return __x;
+}
 
 template <typename T>
-inline void this_cpu_write(T& name, T val) {}
+inline void this_cpu_write(T& name, T val) {
+    uintptr_t __offset = PER_CPU_OFFSET(name);
+    asm volatile("mrs x0, tpidr_el1\n"
+                "add x0, x0, %1\n"
+                "str %0, [x0]"
+                :
+                : "r"(val), "r"(__offset)
+                : "x0", "memory");
+}
+
 #endif
 
 namespace arch {

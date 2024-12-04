@@ -6,9 +6,11 @@
 KERNEL_DIR      := kernel
 GRUB_DIR        := grub
 BUILD_DIR       := build
+BUILD_DIR_ARM   := $(BUILD_DIR)/arm64
 IMAGE_DIR       := $(BUILD_DIR)/image
 STELLUX_IMAGE   := $(IMAGE_DIR)/stellux.img
 KERNEL_FILE     := $(BUILD_DIR)/stellux
+KERNEL_FILE_ARM := $(BUILD_DIR_ARM)/stellux-arm
 GRUB_CFG_PATH   := $(GRUB_DIR)/grub.cfg
 
 # OVMF Firmware Files
@@ -35,6 +37,20 @@ QEMU_FLAGS       := \
     -drive if=pflash,format=raw,readonly=on,file="$(OVMF_CODE)" \
     -drive if=pflash,format=raw,file="$(OVMF_VARS)" \
     -boot order=c
+
+# QEMU ARM Configuration
+QEMU_ARM        := qemu-system-aarch64
+CROSS_COMPILE   := aarch64-linux-gnu-
+QEMU_ARM_FLAGS  := \
+    -machine virt \
+    -cpu cortex-a72 \
+    -m $(QEMU_RAM) \
+    -serial mon:stdio \
+	-kernel $(KERNEL_FILE_ARM) \
+	-net none \
+    -smp $(QEMU_CORES)
+#    -device loader,file=$(KERNEL_FILE_ARM),addr=0x40100000  \
+
 
 # GDB Configuration
 GDB_SETUP       := gdb_setup.gdb
@@ -64,14 +80,18 @@ help:
 	@echo "---- Stellux Makefile Options ----"
 	@echo ""
 	@echo "Available Targets:"
-	@echo "  make help            Show this help message"
-	@echo "  make kernel          Build the Stellux kernel"
-	@echo "  make image           Create the UEFI-compatible disk image (requires sudo)"
-	@echo "  make run             Run the Stellux image in QEMU"
-	@echo "  make run-headless    Run QEMU without graphical output"
-	@echo "  make run-debug       Run QEMU with GDB support"
-	@echo "  make connect-gdb     Connect GDB to a running QEMU instance"
-	@echo "  make clean           Clean build artifacts and disk image"
+	@echo "  make help             Show this help message"
+	@echo "  make kernel           Build the Stellux kernel (x86)"
+	@echo "  make kernel-arm       Build the Stellux kernel (ARM64)"
+	@echo "  make run              Run the Stellux image in QEMU (x86)"
+	@echo "  make run-headless     Run QEMU x86 without graphical output"
+	@echo "  make run-debug        Run QEMU x86 with GDB support"
+	@echo "  make run-arm          Run the Stellux image in QEMU (ARM64)"
+	@echo "  make run-arm-headless Run QEMU ARM64 without graphical output"
+	@echo "  make run-arm-debug    Run QEMU ARM64 with GDB support"
+	@echo "  make connect-gdb      Connect GDB to a running x86 QEMU instance"
+	@echo "  make connect-gdb-arm  Connect GDB to a running ARM64 QEMU instance"
+	@echo "  make clean            Clean build artifacts and disk image"
 	@echo ""
 
 # Builds the Kernel
@@ -131,6 +151,7 @@ clean:
 	@echo "Cleaning up build files and disk image..."
 	$(MAKE) -C $(KERNEL_DIR) clean
 	@rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR_ARM)
 
 # Run the Disk Image in QEMU
 run: $(STELLUX_IMAGE)
@@ -166,6 +187,9 @@ install-dependencies:
 			dosfstools \
 			parted \
 			qemu-system-x86 \
+			gcc-aarch64-linux-gnu \
+            qemu-system-aarch64 \
+			gdb-multiarch \
 			gdb \
 			ovmf; \
 	elif [ -f /etc/redhat-release ]; then \
@@ -176,6 +200,9 @@ install-dependencies:
 			dosfstools \
 			parted \
 			qemu-system-x86_64 \
+			gcc-aarch64-linux-gnu \
+			qemu-system-aarch64 \
+			gdb-multiarch \
 			gdb \
 			edk2-ovmf; \
 	elif [ -f /etc/arch-release ]; then \
@@ -186,6 +213,9 @@ install-dependencies:
 			dosfstools \
 			parted \
 			qemu \
+			aarch64-linux-gnu-gcc \
+			qemu-system-aarch64 \
+			gdb-multiarch \
 			gdb \
 			ovmf; \
 	else \
@@ -201,7 +231,35 @@ install-dependencies:
 	fi
 
 # =========================
+# ARM
+# =========================
+
+kernel-arm: $(KERNEL_FILE_ARM)
+
+$(KERNEL_FILE_ARM): $(BUILD_DIR_ARM)
+	$(MAKE) -C $(KERNEL_DIR) ARCH=arm64 CROSS_COMPILE=$(CROSS_COMPILE)
+	@cp $(KERNEL_DIR)/build/stellux $(KERNEL_FILE_ARM) 
+
+$(BUILD_DIR_ARM):
+	@$(MKDIR) $(BUILD_DIR_ARM)
+
+run-arm: $(KERNEL_FILE_ARM)
+	$(QEMU_ARM) $(QEMU_ARM_FLAGS)
+
+run-arm-headless: $(KERNEL_FILE_ARM)
+	$(QEMU_ARM) $(QEMU_ARM_FLAGS) -nographic
+
+run-arm-debug: $(KERNEL_FILE_ARM)
+	$(QEMU_ARM) $(QEMU_ARM_FLAGS) -gdb tcp::4554 -S -no-reboot -no-shutdown
+
+connect-gdb-arm:
+	gdb-multiarch -ex "source ./$(GDB_SETUP)" \
+		-ex "target remote localhost:4554" \
+		-ex "add-symbol-file $(KERNEL_FILE_ARM)" \
+		-ex "b _start"
+
+# =========================
 # Phony Targets
 # =========================
 
-.PHONY: all help kernel clean run run-headless run-debug run-debug-headless connect-gdb install-dependencies
+.PHONY: all help kernel clean run run-headless run-debug run-debug-headless connect-gdb install-dependencies kernel-arm run-arm run-arm-headless run-arm-debug connect-gdb-arm
